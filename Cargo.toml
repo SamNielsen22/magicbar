@@ -1,0 +1,15 @@
+[package]
+name = "magicbar"
+version = "0.1.0"
+edition = "2021"
+description = "App-aware Touch Bar daemon for Linux"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0.104"
+cairo-rs = { version = "0.22.9", features = ["png"] }
+clap = { version = "4.6.7", features = ["derive"] }
+drm = "0.15.0"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
