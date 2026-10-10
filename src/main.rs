@@ -1,12 +1,19 @@
+mod actions;
+mod daemon;
+mod input;
+mod layout;
 mod render;
 mod transport;
 
 use std::path::PathBuf;
+use std::sync::mpsc;
 
-use anyhow::Context as _;
 use clap::{Parser, Subcommand};
+use evdev::KeyCode;
 
-use render::{Canvas, Rgb};
+use actions::Keyboard;
+use layout::Layout;
+use render::{keys, Canvas, Rgb};
 use transport::Display;
 
 // Used for --png, where there is no hardware to ask.
@@ -29,13 +36,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Show the Touch Bar card, connector and modes
     Info,
-    /// Fill the bar with one colour, e.g. "#ff8800"
     Fill { colour: String },
-    /// Draw a line of text
     Text { text: String },
-    /// Run the daemon
+    Row,
+    Touch,
+    Key { name: String },
     Run,
 }
 
@@ -54,7 +60,23 @@ fn main() -> anyhow::Result<()> {
             canvas.fill(BG)?;
             canvas.text(&text, 28.0, FG)
         }),
-        Command::Run => anyhow::bail!("the daemon is not written yet"),
+        Command::Row => show(cli.png, |canvas| keys::draw_row(canvas, &Layout::default_row(), None)),
+        Command::Touch => {
+            let (tx, rx) = mpsc::channel();
+            input::spawn_reader(input::find_touch_device()?, tx)?;
+            println!("touch the bar. Ctrl-C to exit.");
+            for touch in rx {
+                println!("{touch:?}");
+            }
+            Ok(())
+        }
+        Command::Key { name } => {
+            let key: KeyCode = name
+                .parse()
+                .map_err(|_| anyhow::anyhow!("unknown key {name}. Names look like KEY_ESC"))?;
+            Keyboard::new()?.tap(key)
+        }
+        Command::Run => daemon::run(),
     }
 }
 
@@ -69,27 +91,26 @@ where
         draw(&mut canvas)?;
         canvas.save_png(&path)?;
         println!("wrote {}", path.display());
-        return Ok(());
+    } else {
+        let mut display = transport::drm::DrmDisplay::open()?;
+        let (width, height) = display.size();
+        let mut canvas = Canvas::new(width, height)?;
+        draw(&mut canvas)?;
+        display.present(&canvas)?;
+
+        println!("showing on the bar. Press Enter to exit.");
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line)?;
     }
-
-    let mut display = transport::drm::DrmDisplay::open()?;
-    let (width, height) = display.size();
-    let mut canvas = Canvas::new(width, height)?;
-    draw(&mut canvas)?;
-    display.present(&canvas)?;
-
-    println!("showing on the bar. Press Enter to exit.");
-    let mut line = String::new();
-    std::io::stdin().read_line(&mut line)?;
     Ok(())
 }
 
 fn parse_colour(s: &str) -> anyhow::Result<Rgb> {
     let hex = s.trim_start_matches('#');
-    let n = u32::from_str_radix(hex, 16)
-        .ok()
-        .filter(|_| hex.len() == 6)
-        .with_context(|| format!("colour must look like #rrggbb, got {s}"))?;
+    let n = match u32::from_str_radix(hex, 16) {
+        Ok(n) if hex.len() == 6 => n,
+        _ => anyhow::bail!("colour must look like #rrggbb, got {s}"),
+    };
     let channel = |shift: u32| ((n >> shift) & 0xff) as f64 / 255.0;
     Ok((channel(16), channel(8), channel(0)))
 }

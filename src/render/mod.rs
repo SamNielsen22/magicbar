@@ -1,3 +1,5 @@
+pub mod keys;
+
 use std::f64::consts::FRAC_PI_2;
 use std::fs::File;
 use std::path::Path;
@@ -5,7 +7,7 @@ use std::path::Path;
 use anyhow::Context as _;
 use cairo::{Context, FontSlant, FontWeight, Format, ImageSurface};
 
-pub const FONT: &str = "JetBrainsMono Nerd Font Mono";
+pub const FONT: &str = "JetBrainsMono Nerd Font";
 
 pub type Rgb = (f64, f64, f64);
 
@@ -22,6 +24,10 @@ impl Canvas {
         let surface = ImageSurface::create(Format::Rgb24, height as i32, width as i32)
             .context("creating cairo surface")?;
         Ok(Self { surface, width, height })
+    }
+
+    pub fn size(&self) -> (u32, u32) {
+        (self.width, self.height)
     }
 
     pub fn draw<F>(&mut self, f: F) -> anyhow::Result<()>
